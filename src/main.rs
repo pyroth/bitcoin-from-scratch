@@ -10,13 +10,13 @@ fn main() {
     // Generate a new key pair
     let (sk, pk) = gen_key_pair();
     println!("\nGenerated new key pair:");
-    println!("  Secret key: {:064x}", sk);
+    println!("  Secret key: {sk:064x}");
     println!("  Public key: {}", hex::encode(pk.encode(true)));
 
     // Generate addresses for both networks
     let mainnet_addr = pk.address(Network::Main, true);
     let testnet_addr = pk.address(Network::Test, true);
     println!("\nBitcoin addresses:");
-    println!("  Mainnet: {}", mainnet_addr);
-    println!("  Testnet: {}", testnet_addr);
+    println!("  Mainnet: {mainnet_addr}");
+    println!("  Testnet: {testnet_addr}");
 }

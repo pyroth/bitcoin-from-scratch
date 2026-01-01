@@ -78,7 +78,7 @@ impl TxFetcher {
 }
 
 /// Bitcoin Transaction
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tx {
     pub version: u32,
     pub tx_ins: Vec<TxIn>,
@@ -163,7 +163,7 @@ impl Tx {
         let mut out = Vec::new();
 
         // Version
-        out.extend(encode_int(self.version as u64, 4));
+        out.extend(encode_int(u64::from(self.version), 4));
 
         // Segwit marker
         if self.segwit && !force_legacy {
@@ -200,7 +200,7 @@ impl Tx {
         }
 
         // Locktime
-        out.extend(encode_int(self.locktime as u64, 4));
+        out.extend(encode_int(u64::from(self.locktime), 4));
 
         // SIGHASH_ALL for signing
         if sig_index.is_some() {
@@ -263,6 +263,7 @@ impl Tx {
 
     /// Check if this is a coinbase transaction
     #[must_use]
+    #[inline]
     pub fn is_coinbase(&self) -> bool {
         self.tx_ins.len() == 1
             && self.tx_ins[0].prev_tx == [0u8; 32]
@@ -287,14 +288,14 @@ impl Tx {
 }
 
 /// Witness item
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessItem {
     Int(i32),
     Data(Vec<u8>),
 }
 
 /// Transaction Input
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TxIn {
     pub prev_tx: [u8; 32],
     pub prev_index: u32,
@@ -314,8 +315,10 @@ impl TxIn {
         cursor.read_exact(&mut prev_tx)?;
         prev_tx.reverse(); // Little-endian
 
+        #[allow(clippy::cast_possible_truncation)]
         let prev_index = decode_int(cursor, 4)? as u32;
         let script_sig = Script::decode(cursor)?;
+        #[allow(clippy::cast_possible_truncation)]
         let sequence = decode_int(cursor, 4)? as u32;
 
         Ok(TxIn {
@@ -339,7 +342,7 @@ impl TxIn {
         out.extend_from_slice(&prev_tx);
 
         // Previous index
-        out.extend(encode_int(self.prev_index as u64, 4));
+        out.extend(encode_int(u64::from(self.prev_index), 4));
 
         // Script
         match script_override {
@@ -356,7 +359,7 @@ impl TxIn {
         }
 
         // Sequence
-        out.extend(encode_int(self.sequence as u64, 4));
+        out.extend(encode_int(u64::from(self.sequence), 4));
 
         out
     }
@@ -370,7 +373,7 @@ impl TxIn {
         Ok(tx.tx_outs[self.prev_index as usize].amount)
     }
 
-    /// Get script_pubkey from previous output
+    /// Get `script_pubkey` from previous output
     ///
     /// # Errors
     /// Returns `BitcoinError` if the previous transaction cannot be fetched
@@ -381,7 +384,7 @@ impl TxIn {
 }
 
 /// Transaction Output
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TxOut {
     pub amount: u64,
     pub script_pubkey: Script,

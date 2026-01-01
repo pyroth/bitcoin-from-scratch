@@ -19,7 +19,7 @@ pub static MAGICS: LazyLock<HashMap<&'static str, [u8; 4]>> = LazyLock::new(|| {
 });
 
 /// Network envelope for Bitcoin P2P messages
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkEnvelope {
     pub command: Vec<u8>,
     pub payload: Vec<u8>,
@@ -88,6 +88,7 @@ impl NetworkEnvelope {
     }
 
     /// Encode to bytes
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
 
@@ -114,6 +115,7 @@ impl NetworkEnvelope {
     }
 
     /// Get payload as cursor
+    #[must_use]
     pub fn stream(&self) -> Cursor<&[u8]> {
         Cursor::new(self.payload.as_slice())
     }
@@ -131,7 +133,7 @@ impl std::fmt::Display for NetworkEnvelope {
 }
 
 /// Network address structure
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetAddrStruct {
     pub services: u64,
     pub ip: [u8; 4],
@@ -149,6 +151,7 @@ impl Default for NetAddrStruct {
 }
 
 impl NetAddrStruct {
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&self.services.to_le_bytes());
@@ -161,7 +164,7 @@ impl NetAddrStruct {
 }
 
 /// Version message
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VersionMessage {
     pub version: u32,
     pub services: u64,
@@ -193,6 +196,7 @@ impl Default for VersionMessage {
 impl VersionMessage {
     pub const COMMAND: &'static [u8] = b"version";
 
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&self.version.to_le_bytes());
@@ -221,6 +225,7 @@ pub struct VerAckMessage;
 impl VerAckMessage {
     pub const COMMAND: &'static [u8] = b"verack";
 
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         Vec::new()
     }
@@ -239,6 +244,7 @@ pub struct PingMessage {
 impl PingMessage {
     pub const COMMAND: &'static [u8] = b"ping";
 
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         self.nonce.to_vec()
     }
@@ -261,6 +267,7 @@ pub struct PongMessage {
 impl PongMessage {
     pub const COMMAND: &'static [u8] = b"pong";
 
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         self.nonce.to_vec()
     }
@@ -286,6 +293,7 @@ pub struct GetHeadersMessage {
 impl GetHeadersMessage {
     pub const COMMAND: &'static [u8] = b"getheaders";
 
+    #[must_use]
     pub fn new(start_block: [u8; 32]) -> Self {
         GetHeadersMessage {
             version: 70015,
@@ -295,6 +303,7 @@ impl GetHeadersMessage {
         }
     }
 
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&self.version.to_le_bytes());

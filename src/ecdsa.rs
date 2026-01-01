@@ -21,7 +21,8 @@ pub struct Signature {
 }
 
 impl Signature {
-    pub fn new(r: BigInt, s: BigInt) -> Self {
+    #[must_use]
+    pub const fn new(r: BigInt, s: BigInt) -> Self {
         Signature { r, s }
     }
 
@@ -173,13 +174,12 @@ pub fn sign(secret_key: &BigInt, message: &[u8]) -> Signature {
 pub fn verify(public_key: &Point, message: &[u8], sig: &Signature) -> bool {
     use crate::curves::scalar_mul;
     let n = &BITCOIN.generator.n;
-    let n_clone = n.clone();
 
     // Basic validation
-    if sig.r < BigInt::one() || sig.r >= n_clone {
+    if sig.r < BigInt::one() || sig.r >= *n {
         return false;
     }
-    if sig.s < BigInt::one() || sig.s >= n_clone {
+    if sig.s < BigInt::one() || sig.s >= *n {
         return false;
     }
 

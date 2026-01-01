@@ -83,7 +83,7 @@ pub fn calculate_new_bits(prev_bits: &[u8; 4], dt: i64) -> [u8; 4] {
 }
 
 /// Bitcoin Block Header
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     pub version: u32,
     pub prev_block: [u8; 32],
@@ -99,6 +99,7 @@ impl Block {
     /// # Errors
     /// Returns `BitcoinError` if the block header data is malformed
     pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self> {
+        #[allow(clippy::cast_possible_truncation)]
         let version = decode_int(cursor, 4)? as u32;
 
         let mut prev_block = [0u8; 32];
@@ -109,6 +110,7 @@ impl Block {
         cursor.read_exact(&mut merkle_root)?;
         merkle_root.reverse();
 
+        #[allow(clippy::cast_possible_truncation)]
         let timestamp = decode_int(cursor, 4)? as u32;
 
         let mut bits = [0u8; 4];
@@ -132,7 +134,7 @@ impl Block {
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(80);
 
-        out.extend(encode_int(self.version as u64, 4));
+        out.extend(encode_int(u64::from(self.version), 4));
 
         let mut prev_block = self.prev_block;
         prev_block.reverse();
@@ -142,7 +144,7 @@ impl Block {
         merkle_root.reverse();
         out.extend_from_slice(&merkle_root);
 
-        out.extend(encode_int(self.timestamp as u64, 4));
+        out.extend(encode_int(u64::from(self.timestamp), 4));
         out.extend_from_slice(&self.bits);
         out.extend_from_slice(&self.nonce);
 

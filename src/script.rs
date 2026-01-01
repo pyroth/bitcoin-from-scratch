@@ -27,11 +27,13 @@ pub struct Script {
 }
 
 impl Script {
+    #[must_use]
     pub fn new(cmds: Vec<ScriptCmd>) -> Self {
         Script { cmds }
     }
 
-    pub fn empty() -> Self {
+    #[must_use]
+    pub const fn empty() -> Self {
         Script { cmds: Vec::new() }
     }
 
@@ -88,6 +90,7 @@ impl Script {
     }
 
     /// Encode script to bytes
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
 
@@ -126,6 +129,7 @@ impl Script {
     }
 
     /// Concatenate two scripts
+    #[must_use]
     pub fn concat(&self, other: &Script) -> Script {
         let mut cmds = self.cmds.clone();
         cmds.extend(other.cmds.clone());
@@ -133,6 +137,7 @@ impl Script {
     }
 
     /// Evaluate script for P2PKH transactions
+    #[must_use]
     pub fn evaluate(&self, mod_tx_enc: &[u8]) -> bool {
         // For now, only support standard P2PKH
         if self.cmds.len() != 7 {

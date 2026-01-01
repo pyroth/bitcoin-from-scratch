@@ -73,11 +73,13 @@ pub struct PublicKey {
 
 impl PublicKey {
     /// Create from a Point
-    pub fn from_point(pt: Point) -> Self {
+    #[must_use]
+    pub const fn from_point(pt: Point) -> Self {
         PublicKey { point: pt }
     }
 
     /// Derive public key from secret key
+    #[must_use]
     pub fn from_sk(sk: &BigInt) -> Self {
         use crate::curves::scalar_mul;
         let pk = scalar_mul(sk, &BITCOIN.generator.g);
@@ -85,6 +87,7 @@ impl PublicKey {
     }
 
     /// Derive public key from hex string secret key
+    #[must_use]
     pub fn from_sk_hex(sk_hex: &str) -> Self {
         let sk = BigInt::parse_bytes(sk_hex.as_bytes(), 16).expect("Invalid hex");
         Self::from_sk(&sk)
@@ -227,11 +230,12 @@ pub fn gen_key_pair() -> (BigInt, PublicKey) {
 }
 
 /// Convert BigInt to 32-byte big-endian array
+#[inline]
 fn bigint_to_32_bytes(n: &BigInt) -> [u8; 32] {
     let (_, bytes) = n.to_bytes_be();
     let mut result = [0u8; 32];
-    let start = 32 - bytes.len().min(32);
-    result[start..].copy_from_slice(&bytes[..bytes.len().min(32)]);
+    let len = bytes.len().min(32);
+    result[32 - len..].copy_from_slice(&bytes[bytes.len().saturating_sub(32)..]);
     result
 }
 
@@ -240,6 +244,7 @@ fn bigint_to_32_bytes(n: &BigInt) -> [u8; 32] {
 
 const ALPHABET: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
+#[inline]
 fn alphabet_inv(c: u8) -> Option<u8> {
     ALPHABET.iter().position(|&x| x == c).map(|i| i as u8)
 }

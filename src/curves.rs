@@ -9,6 +9,7 @@ use std::ops::{Add, Mul};
 
 /// Extended Euclidean Algorithm
 /// Returns (gcd, x, y) s.t. a * x + b * y == gcd
+#[must_use]
 pub fn extended_euclidean_algorithm(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
     let mut old_r = a.clone();
     let mut r = b.clone();
@@ -36,6 +37,8 @@ pub fn extended_euclidean_algorithm(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, 
 }
 
 /// Returns modular multiplicative inverse m s.t. (n * m) % p == 1
+#[must_use]
+#[inline]
 pub fn mod_inv(n: &BigInt, p: &BigInt) -> BigInt {
     let (_, x, _) = extended_euclidean_algorithm(n, p);
     x.mod_floor(p)
@@ -65,6 +68,7 @@ pub struct Point {
 }
 
 impl Point {
+    #[must_use]
     pub fn new(curve: Curve, x: BigInt, y: BigInt) -> Self {
         Point {
             curve: Some(curve),
@@ -74,7 +78,8 @@ impl Point {
     }
 
     /// Point at infinity
-    pub fn infinity() -> Self {
+    #[must_use]
+    pub const fn infinity() -> Self {
         Point {
             curve: None,
             x: None,
@@ -82,96 +87,63 @@ impl Point {
         }
     }
 
-    pub fn is_infinity(&self) -> bool {
+    #[must_use]
+    #[inline]
+    pub const fn is_infinity(&self) -> bool {
         self.x.is_none() && self.y.is_none()
     }
+}
+
+/// Core point addition logic - shared by all Add implementations
+fn point_add_impl(lhs: &Point, rhs: &Point) -> Point {
+    if lhs.is_infinity() {
+        return rhs.clone();
+    }
+    if rhs.is_infinity() {
+        return lhs.clone();
+    }
+
+    let curve = lhs.curve.as_ref().unwrap();
+    let self_x = lhs.x.as_ref().unwrap();
+    let self_y = lhs.y.as_ref().unwrap();
+    let other_x = rhs.x.as_ref().unwrap();
+    let other_y = rhs.y.as_ref().unwrap();
+
+    if self_x == other_x && self_y != other_y {
+        return Point::infinity();
+    }
+
+    let m = if self_x == other_x {
+        let numerator = (BigInt::from(3) * self_x.pow(2) + &curve.a).mod_floor(&curve.p);
+        let denominator = (BigInt::from(2) * self_y).mod_floor(&curve.p);
+        (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
+    } else {
+        let numerator = (self_y - other_y).mod_floor(&curve.p);
+        let denominator = (self_x - other_x).mod_floor(&curve.p);
+        (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
+    };
+
+    let rx = (&m.pow(2) - self_x - other_x).mod_floor(&curve.p);
+    let ry = (-(&m * (&rx - self_x) + self_y)).mod_floor(&curve.p);
+
+    Point::new(curve.clone(), rx, ry)
 }
 
 impl Add for Point {
     type Output = Point;
 
+    #[inline]
     fn add(self, other: Point) -> Point {
-        // Handle special case of P + 0 = 0 + P = 0
-        if self.is_infinity() {
-            return other;
-        }
-        if other.is_infinity() {
-            return self;
-        }
-
-        let curve = self.curve.as_ref().unwrap();
-        let self_x = self.x.as_ref().unwrap();
-        let self_y = self.y.as_ref().unwrap();
-        let other_x = other.x.as_ref().unwrap();
-        let other_y = other.y.as_ref().unwrap();
-
-        // Handle special case of P + (-P) = 0
-        if self_x == other_x && self_y != other_y {
-            return Point::infinity();
-        }
-
-        // Compute the "slope"
-        let m = if self_x == other_x {
-            // Point doubling: m = (3 * x^2 + a) / (2 * y)
-            let numerator = (BigInt::from(3) * self_x.pow(2) + &curve.a).mod_floor(&curve.p);
-            let denominator = (BigInt::from(2) * self_y).mod_floor(&curve.p);
-            (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
-        } else {
-            // Point addition: m = (y2 - y1) / (x2 - x1)
-            let numerator = (self_y - other_y).mod_floor(&curve.p);
-            let denominator = (self_x - other_x).mod_floor(&curve.p);
-            (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
-        };
-
-        // Compute the new point
-        let rx = (&m.pow(2) - self_x - other_x).mod_floor(&curve.p);
-        let ry = (-(&m * (&rx - self_x) + self_y)).mod_floor(&curve.p);
-
-        Point::new(curve.clone(), rx, ry)
+        point_add_impl(&self, &other)
     }
 }
 
 impl Add<&Point> for &Point {
     type Output = Point;
 
+    #[inline]
     fn add(self, other: &Point) -> Point {
-        // Handle special case of P + 0 = 0 + P = 0
-        if self.is_infinity() {
-            return other.clone();
-        }
-        if other.is_infinity() {
-            return self.clone();
-        }
-
-        let curve = self.curve.as_ref().unwrap();
-        let self_x = self.x.as_ref().unwrap();
-        let self_y = self.y.as_ref().unwrap();
-        let other_x = other.x.as_ref().unwrap();
-        let other_y = other.y.as_ref().unwrap();
-
-        // Handle special case of P + (-P) = 0
-        if self_x == other_x && self_y != other_y {
-            return Point::infinity();
-        }
-
-        // Compute the "slope"
-        let m = if self_x == other_x {
-            // Point doubling: m = (3 * x^2 + a) / (2 * y)
-            let numerator = (BigInt::from(3) * self_x.pow(2) + &curve.a).mod_floor(&curve.p);
-            let denominator = (BigInt::from(2) * self_y).mod_floor(&curve.p);
-            (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
-        } else {
-            // Point addition: m = (y2 - y1) / (x2 - x1)
-            let numerator = (self_y - other_y).mod_floor(&curve.p);
-            let denominator = (self_x - other_x).mod_floor(&curve.p);
-            (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
-        };
-
-        // Compute the new point
-        let rx = (&m.pow(2) - self_x - other_x).mod_floor(&curve.p);
-        let ry = (-(&m * (&rx - self_x) + self_y)).mod_floor(&curve.p);
-
-        Point::new(curve.clone(), rx, ry)
+        point_add_impl(self, other)
     }
 }
 
@@ -209,6 +181,7 @@ impl Mul<Point> for &BigInt {
 }
 
 /// Double-and-add scalar multiplication
+#[must_use]
 pub fn scalar_mul(k: &BigInt, point: &Point) -> Point {
     debug_assert!(*k >= BigInt::zero(), "scalar must be non-negative");
     let mut result = Point::infinity();
@@ -233,7 +206,8 @@ pub struct Generator {
 }
 
 impl Generator {
-    pub fn new(g: Point, n: BigInt) -> Self {
+    #[must_use]
+    pub const fn new(g: Point, n: BigInt) -> Self {
         Generator { g, n }
     }
 }
