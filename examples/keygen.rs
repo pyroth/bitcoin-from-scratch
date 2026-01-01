@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example keygen
 
-use bitcoin::{gen_key_pair, PublicKey};
+use bitcoin::{gen_key_pair, Network, PublicKey};
 
 fn main() {
     println!("=== Bitcoin Key Generation ===\n");
@@ -21,8 +21,8 @@ fn main() {
 
     // Generate addresses
     println!("Bitcoin Addresses:");
-    println!("  Mainnet: {}", public_key.address("main", true));
-    println!("  Testnet: {}", public_key.address("test", true));
+    println!("  Mainnet: {}", public_key.address(Network::Main, true));
+    println!("  Testnet: {}", public_key.address(Network::Test, true));
 
     // Derive from known secret key (Mastering Bitcoin example)
     println!("\n=== Known Key Derivation ===\n");
@@ -30,6 +30,6 @@ fn main() {
     let pk = PublicKey::from_sk_hex(known_sk);
 
     println!("Secret Key: {}", known_sk);
-    println!("Address:    {}", pk.address("main", true));
+    println!("Address:    {}", pk.address(Network::Main, true));
     println!("Expected:   14cxpo3MBCYYWCgF74SWTdcmxipnGUsPw3");
 }

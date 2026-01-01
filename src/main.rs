@@ -2,7 +2,7 @@
 //!
 //! A educational Bitcoin library demonstrating core concepts.
 
-use bitcoin::gen_key_pair;
+use bitcoin::{gen_key_pair, keys::Network};
 
 fn main() {
     println!("Simple Bitcoin - Rust Implementation");
@@ -14,8 +14,8 @@ fn main() {
     println!("  Public key: {}", hex::encode(pk.encode(true)));
 
     // Generate addresses for both networks
-    let mainnet_addr = pk.address("main", true);
-    let testnet_addr = pk.address("test", true);
+    let mainnet_addr = pk.address(Network::Main, true);
+    let testnet_addr = pk.address(Network::Test, true);
     println!("\nBitcoin addresses:");
     println!("  Mainnet: {}", mainnet_addr);
     println!("  Testnet: {}", testnet_addr);

@@ -131,11 +131,47 @@ impl Add for Point {
     }
 }
 
-impl<'a> Add for &'a Point {
+impl Add<&Point> for &Point {
     type Output = Point;
 
-    fn add(self, other: &'a Point) -> Point {
-        self.clone() + other.clone()
+    fn add(self, other: &Point) -> Point {
+        // Handle special case of P + 0 = 0 + P = 0
+        if self.is_infinity() {
+            return other.clone();
+        }
+        if other.is_infinity() {
+            return self.clone();
+        }
+
+        let curve = self.curve.as_ref().unwrap();
+        let self_x = self.x.as_ref().unwrap();
+        let self_y = self.y.as_ref().unwrap();
+        let other_x = other.x.as_ref().unwrap();
+        let other_y = other.y.as_ref().unwrap();
+
+        // Handle special case of P + (-P) = 0
+        if self_x == other_x && self_y != other_y {
+            return Point::infinity();
+        }
+
+        // Compute the "slope"
+        let m = if self_x == other_x {
+            // Point doubling: m = (3 * x^2 + a) / (2 * y)
+            let numerator = (BigInt::from(3) * self_x.pow(2) + &curve.a).mod_floor(&curve.p);
+            let denominator = (BigInt::from(2) * self_y).mod_floor(&curve.p);
+            (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
+        } else {
+            // Point addition: m = (y2 - y1) / (x2 - x1)
+            let numerator = (self_y - other_y).mod_floor(&curve.p);
+            let denominator = (self_x - other_x).mod_floor(&curve.p);
+            (numerator * mod_inv(&denominator, &curve.p)).mod_floor(&curve.p)
+        };
+
+        // Compute the new point
+        let rx = (&m.pow(2) - self_x - other_x).mod_floor(&curve.p);
+        let ry = (-(&m * (&rx - self_x) + self_y)).mod_floor(&curve.p);
+
+        Point::new(curve.clone(), rx, ry)
     }
 }
 
@@ -174,16 +210,16 @@ impl Mul<Point> for &BigInt {
 
 /// Double-and-add scalar multiplication
 pub fn scalar_mul(k: &BigInt, point: &Point) -> Point {
-    assert!(*k >= BigInt::zero());
+    debug_assert!(*k >= BigInt::zero(), "scalar must be non-negative");
     let mut result = Point::infinity();
-    let mut append = point.clone();
+    let mut addend = point.clone();
     let mut k = k.clone();
 
     while !k.is_zero() {
         if (&k & BigInt::one()) == BigInt::one() {
-            result = result + append.clone();
+            result = &result + &addend;
         }
-        append = append.clone() + append;
+        addend = &addend + &addend;
         k >>= 1;
     }
     result

@@ -2,11 +2,51 @@
 
 use crate::bitcoin::BITCOIN;
 use crate::curves::Point;
+use crate::error::{BitcoinError, Result};
 use crate::ripemd160::hash160;
 use crate::sha256::sha256;
 use num_bigint::BigInt;
 use num_traits::One;
 use rand::RngCore;
+
+/// Bitcoin network type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Network {
+    Main,
+    Test,
+}
+
+impl Network {
+    /// Get version byte for addresses
+    #[inline]
+    pub const fn version_byte(self) -> u8 {
+        match self {
+            Network::Main => 0x00,
+            Network::Test => 0x6f,
+        }
+    }
+
+    /// Get network name
+    #[inline]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Network::Main => "main",
+            Network::Test => "test",
+        }
+    }
+}
+
+impl TryFrom<&str> for Network {
+    type Error = BitcoinError;
+
+    fn try_from(s: &str) -> Result<Self> {
+        match s {
+            "main" | "mainnet" => Ok(Network::Main),
+            "test" | "testnet" => Ok(Network::Test),
+            _ => Err(BitcoinError::InvalidFormat(format!("Unknown network: {}", s))),
+        }
+    }
+}
 
 /// Generate a secret key with uniform random distribution in [1, n)
 pub fn gen_secret_key(n: &BigInt) -> BigInt {
@@ -47,9 +87,9 @@ impl PublicKey {
     }
 
     /// Decode from SEC binary format
-    pub fn decode(bytes: &[u8]) -> Result<Self, &'static str> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.is_empty() {
-            return Err("Empty public key");
+            return Err(BitcoinError::InvalidFormat("Empty public key".into()));
         }
 
         let curve = BITCOIN.generator.g.curve.as_ref().unwrap();
@@ -58,7 +98,7 @@ impl PublicKey {
             // Uncompressed format
             4 => {
                 if bytes.len() != 65 {
-                    return Err("Invalid uncompressed public key length");
+                    return Err(BitcoinError::InvalidFormat("Invalid uncompressed public key length".into()));
                 }
                 let x = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes[1..33]);
                 let y = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes[33..65]);
@@ -69,7 +109,7 @@ impl PublicKey {
             // Compressed format
             2 | 3 => {
                 if bytes.len() != 33 {
-                    return Err("Invalid compressed public key length");
+                    return Err(BitcoinError::InvalidFormat("Invalid compressed public key length".into()));
                 }
                 let is_even = bytes[0] == 2;
                 let x = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes[1..33]);
@@ -92,7 +132,7 @@ impl PublicKey {
                     point: Point::new(curve.clone(), x, y),
                 })
             }
-            _ => Err("Invalid public key prefix"),
+            _ => Err(BitcoinError::InvalidFormat("Invalid public key prefix".into())),
         }
     }
 
@@ -126,27 +166,28 @@ impl PublicKey {
         hash160(&self.encode(compressed))
     }
 
-    /// Get Bitcoin address
-    pub fn address(&self, net: &str, compressed: bool) -> String {
+    /// Get Bitcoin address for a specific network
+    pub fn address(&self, net: Network, compressed: bool) -> String {
         let pkb_hash = self.encode_hash160(compressed);
+        Self::pkb_hash_to_address(&pkb_hash, net)
+    }
 
-        // Add version byte
-        let version = match net {
-            "main" => 0x00,
-            "test" => 0x6f,
-            _ => panic!("Unknown network: {}", net),
-        };
+    /// Get Bitcoin address from string network name (for convenience)
+    /// Panics on invalid network name - use `address` with `Network` enum for safe code
+    pub fn address_str(&self, net: &str, compressed: bool) -> String {
+        let network = Network::try_from(net).expect("Invalid network");
+        self.address(network, compressed)
+    }
 
-        let mut ver_pkb_hash = vec![version];
-        ver_pkb_hash.extend_from_slice(&pkb_hash);
+    /// Convert public key hash to address
+    fn pkb_hash_to_address(pkb_hash: &[u8; 20], net: Network) -> String {
+        let mut ver_pkb_hash = vec![net.version_byte()];
+        ver_pkb_hash.extend_from_slice(pkb_hash);
 
         // Calculate checksum
         let checksum = &sha256(&sha256(&ver_pkb_hash))[..4];
-
-        // Append checksum
         ver_pkb_hash.extend_from_slice(checksum);
 
-        // Base58 encode
         b58encode(&ver_pkb_hash)
     }
 
@@ -215,12 +256,13 @@ pub fn b58encode(bytes: &[u8]) -> String {
 }
 
 /// Base58 decode to bytes
-pub fn b58decode(s: &str) -> Result<Vec<u8>, &'static str> {
+pub fn b58decode(s: &str) -> Result<Vec<u8>> {
     let mut n = BigInt::from(0);
     let fifty_eight = BigInt::from(58);
 
     for c in s.bytes() {
-        let val = alphabet_inv(c).ok_or("Invalid base58 character")?;
+        let val = alphabet_inv(c)
+            .ok_or_else(|| BitcoinError::InvalidFormat("Invalid base58 character".into()))?;
         n = n * &fifty_eight + BigInt::from(val);
     }
 
@@ -244,17 +286,17 @@ pub fn b58decode(s: &str) -> Result<Vec<u8>, &'static str> {
 }
 
 /// Extract public key hash from Base58Check address
-pub fn address_to_pkb_hash(b58check_address: &str) -> Result<[u8; 20], &'static str> {
+pub fn address_to_pkb_hash(b58check_address: &str) -> Result<[u8; 20]> {
     let bytes = b58decode(b58check_address)?;
 
     if bytes.len() != 25 {
-        return Err("Invalid address length");
+        return Err(BitcoinError::InvalidFormat("Invalid address length".into()));
     }
 
     // Validate checksum
     let checksum = &sha256(&sha256(&bytes[..21]))[..4];
     if checksum != &bytes[21..25] {
-        return Err("Invalid checksum");
+        return Err(BitcoinError::Validation("Invalid checksum".into()));
     }
 
     // Extract public key hash (skip version byte, remove checksum)
@@ -306,7 +348,7 @@ mod tests {
 
         for (net, compressed, sk_hex, expected_addr) in tests {
             let pk = PublicKey::from_sk_hex(sk_hex);
-            let addr = pk.address(net, compressed);
+            let addr = pk.address_str(net, compressed);
             assert_eq!(addr, expected_addr);
         }
     }
