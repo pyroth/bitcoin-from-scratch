@@ -5,6 +5,7 @@ use std::fs;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
+use crate::error::{BitcoinError, Result};
 use crate::script::{Script, ScriptCmd, decode_int, decode_varint, encode_int, encode_varint};
 use crate::sha256::sha256;
 
@@ -13,10 +14,13 @@ pub struct TxFetcher;
 
 impl TxFetcher {
     /// Fetch a transaction by ID
-    pub fn fetch(tx_id: &str, net: &str) -> Result<Tx, String> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the transaction cannot be fetched or parsed
+    pub fn fetch(tx_id: &str, net: &str) -> Result<Tx> {
         // Validate tx_id
         if !tx_id.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err("Invalid transaction ID".to_string());
+            return Err(BitcoinError::InvalidFormat("Invalid transaction ID".into()));
         }
         let tx_id = tx_id.to_lowercase();
 
@@ -25,23 +29,34 @@ impl TxFetcher {
 
         let raw = if Path::new(&cache_file).exists() {
             // Read from cache
-            fs::read(&cache_file).map_err(|e| e.to_string())?
+            fs::read(&cache_file)?
         } else {
             // Fetch from API
             let url = match net {
                 "main" => format!("https://blockstream.info/api/tx/{}/hex", tx_id),
                 "test" => format!("https://blockstream.info/testnet/api/tx/{}/hex", tx_id),
-                _ => return Err(format!("Invalid network: {}", net)),
+                _ => {
+                    return Err(BitcoinError::InvalidFormat(format!(
+                        "Invalid network: {}",
+                        net
+                    )));
+                }
             };
 
-            let response = reqwest::blocking::get(&url).map_err(|e| e.to_string())?;
+            let response =
+                reqwest::blocking::get(&url).map_err(|e| BitcoinError::Network(e.to_string()))?;
 
             if !response.status().is_success() {
-                return Err(format!("Transaction {} not found", tx_id));
+                return Err(BitcoinError::Network(format!(
+                    "Transaction {} not found",
+                    tx_id
+                )));
             }
 
-            let hex_str = response.text().map_err(|e| e.to_string())?;
-            let raw = hex::decode(hex_str.trim()).map_err(|e| e.to_string())?;
+            let hex_str = response
+                .text()
+                .map_err(|e| BitcoinError::Network(e.to_string()))?;
+            let raw = hex::decode(hex_str.trim())?;
 
             // Cache to disk
             fs::create_dir_all(txdb_dir).ok();
@@ -55,7 +70,7 @@ impl TxFetcher {
 
         // Verify ID matches
         if tx.id() != tx_id {
-            return Err("Transaction ID mismatch".to_string());
+            return Err(BitcoinError::Validation("Transaction ID mismatch".into()));
         }
 
         Ok(tx)
@@ -75,24 +90,25 @@ pub struct Tx {
 
 impl Tx {
     /// Decode transaction from bytes
-    pub fn decode(cursor: &mut Cursor<&[u8]>, net: &str) -> Result<Self, String> {
-        let version = decode_int(cursor, 4).map_err(|e| e.to_string())? as u32;
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the transaction data is malformed
+    pub fn decode(cursor: &mut Cursor<&[u8]>, net: &str) -> Result<Self> {
+        let version = decode_int(cursor, 4)? as u32;
 
         // Detect segwit
         let mut segwit = false;
-        let mut num_inputs = decode_varint(cursor).map_err(|e| e.to_string())?;
+        let mut num_inputs = decode_varint(cursor)?;
 
         if num_inputs == 0 {
             // Segwit marker
             let mut flag = [0u8; 1];
-            cursor
-                .read_exact(&mut flag)
-                .map_err(|_| "Failed to read segwit flag")?;
+            cursor.read_exact(&mut flag)?;
             if flag[0] != 1 {
-                return Err("Invalid segwit flag".to_string());
+                return Err(BitcoinError::Parse("Invalid segwit flag".into()));
             }
             segwit = true;
-            num_inputs = decode_varint(cursor).map_err(|e| e.to_string())?;
+            num_inputs = decode_varint(cursor)?;
         }
 
         // Decode inputs
@@ -104,7 +120,7 @@ impl Tx {
         }
 
         // Decode outputs
-        let num_outputs = decode_varint(cursor).map_err(|e| e.to_string())?;
+        let num_outputs = decode_varint(cursor)?;
         let mut tx_outs = Vec::new();
         for _ in 0..num_outputs {
             tx_outs.push(TxOut::decode(cursor)?);
@@ -113,17 +129,15 @@ impl Tx {
         // Decode witness data for segwit
         if segwit {
             for tx_in in &mut tx_ins {
-                let num_items = decode_varint(cursor).map_err(|e| e.to_string())?;
+                let num_items = decode_varint(cursor)?;
                 let mut items = Vec::new();
                 for _ in 0..num_items {
-                    let item_len = decode_varint(cursor).map_err(|e| e.to_string())?;
+                    let item_len = decode_varint(cursor)?;
                     if item_len == 0 {
                         items.push(WitnessItem::Int(0));
                     } else {
                         let mut data = vec![0u8; item_len as usize];
-                        cursor
-                            .read_exact(&mut data)
-                            .map_err(|_| "Failed to read witness")?;
+                        cursor.read_exact(&mut data)?;
                         items.push(WitnessItem::Data(data));
                     }
                 }
@@ -131,7 +145,7 @@ impl Tx {
             }
         }
 
-        let locktime = decode_int(cursor, 4).map_err(|e| e.to_string())? as u32;
+        let locktime = decode_int(cursor, 4)? as u32;
 
         Ok(Tx {
             version,
@@ -144,6 +158,7 @@ impl Tx {
     }
 
     /// Encode transaction to bytes
+    #[must_use]
     pub fn encode(&self, force_legacy: bool, sig_index: Option<usize>) -> Vec<u8> {
         let mut out = Vec::new();
 
@@ -196,6 +211,7 @@ impl Tx {
     }
 
     /// Get transaction ID (double SHA-256, reversed)
+    #[must_use]
     pub fn id(&self) -> String {
         let encoded = self.encode(true, None);
         let hash = sha256(&sha256(&encoded));
@@ -204,7 +220,10 @@ impl Tx {
     }
 
     /// Calculate transaction fee
-    pub fn fee(&self) -> Result<i64, String> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if previous outputs cannot be fetched
+    pub fn fee(&self) -> Result<i64> {
         let mut input_total = 0i64;
         for tx_in in &self.tx_ins {
             input_total += tx_in.value()? as i64;
@@ -214,9 +233,14 @@ impl Tx {
     }
 
     /// Validate transaction
-    pub fn validate(&self) -> Result<bool, String> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if validation cannot be performed
+    pub fn validate(&self) -> Result<bool> {
         if self.segwit {
-            return Err("Segwit validation not implemented".to_string());
+            return Err(BitcoinError::Validation(
+                "Segwit validation not implemented".into(),
+            ));
         }
 
         // Check fee is non-negative
@@ -238,6 +262,7 @@ impl Tx {
     }
 
     /// Check if this is a coinbase transaction
+    #[must_use]
     pub fn is_coinbase(&self) -> bool {
         self.tx_ins.len() == 1
             && self.tx_ins[0].prev_tx == [0u8; 32]
@@ -245,6 +270,7 @@ impl Tx {
     }
 
     /// Get coinbase height (BIP34)
+    #[must_use]
     pub fn coinbase_height(&self) -> Option<u32> {
         if !self.is_coinbase() {
             return None;
@@ -280,16 +306,17 @@ pub struct TxIn {
 
 impl TxIn {
     /// Decode from bytes
-    pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self, String> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the input data is malformed
+    pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self> {
         let mut prev_tx = [0u8; 32];
-        cursor
-            .read_exact(&mut prev_tx)
-            .map_err(|_| "Failed to read prev_tx")?;
+        cursor.read_exact(&mut prev_tx)?;
         prev_tx.reverse(); // Little-endian
 
-        let prev_index = decode_int(cursor, 4).map_err(|e| e.to_string())? as u32;
-        let script_sig = Script::decode(cursor).map_err(|e| e.to_string())?;
-        let sequence = decode_int(cursor, 4).map_err(|e| e.to_string())? as u32;
+        let prev_index = decode_int(cursor, 4)? as u32;
+        let script_sig = Script::decode(cursor)?;
+        let sequence = decode_int(cursor, 4)? as u32;
 
         Ok(TxIn {
             prev_tx,
@@ -302,6 +329,7 @@ impl TxIn {
     }
 
     /// Encode to bytes
+    #[must_use]
     pub fn encode(&self, script_override: Option<bool>) -> Vec<u8> {
         let mut out = Vec::new();
 
@@ -334,13 +362,19 @@ impl TxIn {
     }
 
     /// Get value from previous output
-    pub fn value(&self) -> Result<u64, String> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the previous transaction cannot be fetched
+    pub fn value(&self) -> Result<u64> {
         let tx = TxFetcher::fetch(&hex::encode(self.prev_tx), &self.net)?;
         Ok(tx.tx_outs[self.prev_index as usize].amount)
     }
 
     /// Get script_pubkey from previous output
-    pub fn script_pubkey(&self) -> Result<Script, String> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the previous transaction cannot be fetched
+    pub fn script_pubkey(&self) -> Result<Script> {
         let tx = TxFetcher::fetch(&hex::encode(self.prev_tx), &self.net)?;
         Ok(tx.tx_outs[self.prev_index as usize].script_pubkey.clone())
     }
@@ -355,9 +389,12 @@ pub struct TxOut {
 
 impl TxOut {
     /// Decode from bytes
-    pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self, String> {
-        let amount = decode_int(cursor, 8).map_err(|e| e.to_string())?;
-        let script_pubkey = Script::decode(cursor).map_err(|e| e.to_string())?;
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the output data is malformed
+    pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self> {
+        let amount = decode_int(cursor, 8)?;
+        let script_pubkey = Script::decode(cursor)?;
         Ok(TxOut {
             amount,
             script_pubkey,
@@ -365,6 +402,7 @@ impl TxOut {
     }
 
     /// Encode to bytes
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend(encode_int(self.amount, 8));

@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example keygen
 
-use bitcoin::{gen_key_pair, Network, PublicKey};
+use bitcoin::{Network, PublicKey, gen_key_pair};
 
 fn main() {
     println!("=== Bitcoin Key Generation ===\n");

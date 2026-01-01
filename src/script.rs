@@ -6,8 +6,12 @@ use std::io::{Cursor, Read};
 use std::sync::LazyLock;
 
 use crate::ecdsa::{Signature, verify};
+use crate::error::BitcoinError;
 use crate::keys::PublicKey;
 use crate::ripemd160::hash160;
+
+/// Result type for script operations
+pub type Result<T> = std::result::Result<T, BitcoinError>;
 
 /// Script command - either an opcode or data bytes
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,45 +36,42 @@ impl Script {
     }
 
     /// Decode script from bytes
-    pub fn decode(data: &mut Cursor<&[u8]>) -> Result<Self, &'static str> {
+    ///
+    /// # Errors
+    /// Returns `BitcoinError::Parse` if the script data is malformed
+    pub fn decode(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let length = decode_varint(data)?;
         let mut cmds = Vec::new();
         let mut count = 0usize;
 
         while count < length as usize {
             let mut byte = [0u8; 1];
-            data.read_exact(&mut byte)
-                .map_err(|_| "Failed to read byte")?;
+            data.read_exact(&mut byte)?;
             count += 1;
             let current = byte[0];
 
             if (1..=75).contains(&current) {
                 // Data push of 1-75 bytes
                 let mut buf = vec![0u8; current as usize];
-                data.read_exact(&mut buf)
-                    .map_err(|_| "Failed to read data")?;
+                data.read_exact(&mut buf)?;
                 count += current as usize;
                 cmds.push(ScriptCmd::Data(buf));
             } else if current == 76 {
                 // OP_PUSHDATA1: next byte is length
                 let mut len_byte = [0u8; 1];
-                data.read_exact(&mut len_byte)
-                    .map_err(|_| "Failed to read pushdata1 length")?;
+                data.read_exact(&mut len_byte)?;
                 let data_len = len_byte[0] as usize;
                 let mut buf = vec![0u8; data_len];
-                data.read_exact(&mut buf)
-                    .map_err(|_| "Failed to read pushdata1 data")?;
+                data.read_exact(&mut buf)?;
                 count += 1 + data_len;
                 cmds.push(ScriptCmd::Data(buf));
             } else if current == 77 {
                 // OP_PUSHDATA2: next 2 bytes are length (little-endian)
                 let mut len_bytes = [0u8; 2];
-                data.read_exact(&mut len_bytes)
-                    .map_err(|_| "Failed to read pushdata2 length")?;
+                data.read_exact(&mut len_bytes)?;
                 let data_len = u16::from_le_bytes(len_bytes) as usize;
                 let mut buf = vec![0u8; data_len];
-                data.read_exact(&mut buf)
-                    .map_err(|_| "Failed to read pushdata2 data")?;
+                data.read_exact(&mut buf)?;
                 count += 2 + data_len;
                 cmds.push(ScriptCmd::Data(buf));
             } else {
@@ -80,7 +81,7 @@ impl Script {
         }
 
         if count != length as usize {
-            return Err("Script parsing failed: length mismatch");
+            return Err(BitcoinError::Parse("Script length mismatch".into()));
         }
 
         Ok(Script { cmds })
@@ -229,32 +230,28 @@ impl std::ops::Add for &Script {
 }
 
 /// Decode a variable-length integer
-pub fn decode_varint(cursor: &mut Cursor<&[u8]>) -> Result<u64, &'static str> {
+///
+/// # Errors
+/// Returns `BitcoinError::Io` if reading from the cursor fails
+#[inline]
+pub fn decode_varint(cursor: &mut Cursor<&[u8]>) -> Result<u64> {
     let mut buf = [0u8; 1];
-    cursor
-        .read_exact(&mut buf)
-        .map_err(|_| "Failed to read varint")?;
+    cursor.read_exact(&mut buf)?;
 
     match buf[0] {
         0xfd => {
             let mut bytes = [0u8; 2];
-            cursor
-                .read_exact(&mut bytes)
-                .map_err(|_| "Failed to read varint")?;
+            cursor.read_exact(&mut bytes)?;
             Ok(u16::from_le_bytes(bytes) as u64)
         }
         0xfe => {
             let mut bytes = [0u8; 4];
-            cursor
-                .read_exact(&mut bytes)
-                .map_err(|_| "Failed to read varint")?;
+            cursor.read_exact(&mut bytes)?;
             Ok(u32::from_le_bytes(bytes) as u64)
         }
         0xff => {
             let mut bytes = [0u8; 8];
-            cursor
-                .read_exact(&mut bytes)
-                .map_err(|_| "Failed to read varint")?;
+            cursor.read_exact(&mut bytes)?;
             Ok(u64::from_le_bytes(bytes))
         }
         n => Ok(n as u64),
@@ -262,6 +259,8 @@ pub fn decode_varint(cursor: &mut Cursor<&[u8]>) -> Result<u64, &'static str> {
 }
 
 /// Encode a variable-length integer
+#[must_use]
+#[inline]
 pub fn encode_varint(n: u64) -> Vec<u8> {
     if n < 0xfd {
         vec![n as u8]
@@ -281,11 +280,13 @@ pub fn encode_varint(n: u64) -> Vec<u8> {
 }
 
 /// Decode a little-endian integer
-pub fn decode_int(cursor: &mut Cursor<&[u8]>, nbytes: usize) -> Result<u64, &'static str> {
+///
+/// # Errors
+/// Returns `BitcoinError::Io` if reading from the cursor fails
+#[inline]
+pub fn decode_int(cursor: &mut Cursor<&[u8]>, nbytes: usize) -> Result<u64> {
     let mut buf = vec![0u8; nbytes];
-    cursor
-        .read_exact(&mut buf)
-        .map_err(|_| "Failed to read int")?;
+    cursor.read_exact(&mut buf)?;
 
     let mut result = 0u64;
     for (i, &byte) in buf.iter().enumerate() {
@@ -295,6 +296,8 @@ pub fn decode_int(cursor: &mut Cursor<&[u8]>, nbytes: usize) -> Result<u64, &'st
 }
 
 /// Encode a little-endian integer
+#[must_use]
+#[inline]
 pub fn encode_int(n: u64, nbytes: usize) -> Vec<u8> {
     let mut result = Vec::with_capacity(nbytes);
     for i in 0..nbytes {

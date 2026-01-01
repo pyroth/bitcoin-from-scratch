@@ -43,12 +43,16 @@ impl TryFrom<&str> for Network {
         match s {
             "main" | "mainnet" => Ok(Network::Main),
             "test" | "testnet" => Ok(Network::Test),
-            _ => Err(BitcoinError::InvalidFormat(format!("Unknown network: {}", s))),
+            _ => Err(BitcoinError::InvalidFormat(format!(
+                "Unknown network: {}",
+                s
+            ))),
         }
     }
 }
 
 /// Generate a secret key with uniform random distribution in [1, n)
+#[must_use]
 pub fn gen_secret_key(n: &BigInt) -> BigInt {
     let mut rng = rand::rng();
     loop {
@@ -98,7 +102,9 @@ impl PublicKey {
             // Uncompressed format
             4 => {
                 if bytes.len() != 65 {
-                    return Err(BitcoinError::InvalidFormat("Invalid uncompressed public key length".into()));
+                    return Err(BitcoinError::InvalidFormat(
+                        "Invalid uncompressed public key length".into(),
+                    ));
                 }
                 let x = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes[1..33]);
                 let y = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes[33..65]);
@@ -109,7 +115,9 @@ impl PublicKey {
             // Compressed format
             2 | 3 => {
                 if bytes.len() != 33 {
-                    return Err(BitcoinError::InvalidFormat("Invalid compressed public key length".into()));
+                    return Err(BitcoinError::InvalidFormat(
+                        "Invalid compressed public key length".into(),
+                    ));
                 }
                 let is_even = bytes[0] == 2;
                 let x = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes[1..33]);
@@ -132,11 +140,14 @@ impl PublicKey {
                     point: Point::new(curve.clone(), x, y),
                 })
             }
-            _ => Err(BitcoinError::InvalidFormat("Invalid public key prefix".into())),
+            _ => Err(BitcoinError::InvalidFormat(
+                "Invalid public key prefix".into(),
+            )),
         }
     }
 
     /// Encode to SEC format
+    #[must_use]
     pub fn encode(&self, compressed: bool) -> Vec<u8> {
         let x = self.point.x.as_ref().unwrap();
         let y = self.point.y.as_ref().unwrap();
@@ -162,18 +173,23 @@ impl PublicKey {
     }
 
     /// Encode and hash with HASH160
+    #[must_use]
     pub fn encode_hash160(&self, compressed: bool) -> [u8; 20] {
         hash160(&self.encode(compressed))
     }
 
     /// Get Bitcoin address for a specific network
+    #[must_use]
     pub fn address(&self, net: Network, compressed: bool) -> String {
         let pkb_hash = self.encode_hash160(compressed);
         Self::pkb_hash_to_address(&pkb_hash, net)
     }
 
     /// Get Bitcoin address from string network name (for convenience)
+    ///
+    /// # Panics
     /// Panics on invalid network name - use `address` with `Network` enum for safe code
+    #[must_use]
     pub fn address_str(&self, net: &str, compressed: bool) -> String {
         let network = Network::try_from(net).expect("Invalid network");
         self.address(network, compressed)
@@ -203,6 +219,7 @@ impl PublicKey {
 }
 
 /// Generate a (secret_key, public_key) pair
+#[must_use]
 pub fn gen_key_pair() -> (BigInt, PublicKey) {
     let sk = gen_secret_key(&BITCOIN.generator.n);
     let pk = PublicKey::from_sk(&sk);
@@ -228,6 +245,7 @@ fn alphabet_inv(c: u8) -> Option<u8> {
 }
 
 /// Base58 encode bytes (expects 25 bytes for Bitcoin address)
+#[must_use]
 pub fn b58encode(bytes: &[u8]) -> String {
     let mut n = BigInt::from_bytes_be(num_bigint::Sign::Plus, bytes);
     let mut chars = Vec::new();

@@ -4,6 +4,8 @@
 use sha2::{Digest, Sha256};
 
 /// Compute SHA-256 hash
+#[must_use]
+#[inline]
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -11,6 +13,8 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
 }
 
 /// Double SHA-256 (used in Bitcoin)
+#[must_use]
+#[inline]
 pub fn hash256(data: &[u8]) -> [u8; 32] {
     sha256(&sha256(data))
 }

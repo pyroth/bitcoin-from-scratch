@@ -12,6 +12,8 @@ use num_traits::One;
 use std::io::{Cursor, Read};
 
 /// ECDSA Signature (r, s)
+///
+/// Represents a digital signature consisting of two big integers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
     pub r: BigInt,
@@ -93,6 +95,7 @@ impl Signature {
     }
 
     /// Encode to DER format
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let r_bytes = self.encode_int(&self.r);
         let s_bytes = self.encode_int(&self.s);
@@ -134,6 +137,10 @@ impl Signature {
 }
 
 /// Sign a message with a secret key
+///
+/// Uses double SHA-256 hashing and generates a random nonce.
+/// Ensures low S value per BIP-62.
+#[must_use]
 pub fn sign(secret_key: &BigInt, message: &[u8]) -> Signature {
     use crate::curves::scalar_mul;
     let n = &BITCOIN.generator.n;
@@ -160,6 +167,9 @@ pub fn sign(secret_key: &BigInt, message: &[u8]) -> Signature {
 }
 
 /// Verify a signature
+///
+/// Returns `true` if the signature is valid for the given public key and message.
+#[must_use]
 pub fn verify(public_key: &Point, message: &[u8], sig: &Signature) -> bool {
     use crate::curves::scalar_mul;
     let n = &BITCOIN.generator.n;

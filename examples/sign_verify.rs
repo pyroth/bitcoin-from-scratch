@@ -22,15 +22,24 @@ fn main() {
 
     // Verify with correct key
     let valid = verify(&alice_pk.point, message, &signature);
-    println!("Verify with Alice's key: {}", if valid { "VALID" } else { "INVALID" });
+    println!(
+        "Verify with Alice's key: {}",
+        if valid { "VALID" } else { "INVALID" }
+    );
 
     // Verify with wrong key
     let bob_sig = sign(&bob_sk, message);
     let invalid = verify(&alice_pk.point, message, &bob_sig);
-    println!("Verify Bob's sig with Alice's key: {}", if invalid { "VALID" } else { "INVALID" });
+    println!(
+        "Verify Bob's sig with Alice's key: {}",
+        if invalid { "VALID" } else { "INVALID" }
+    );
 
     // Verify tampered message
     let tampered = b"Alice sends 100 BTC to Bob";
     let tampered_check = verify(&alice_pk.point, tampered, &signature);
-    println!("Verify tampered message: {}", if tampered_check { "VALID" } else { "INVALID" });
+    println!(
+        "Verify tampered message: {}",
+        if tampered_check { "VALID" } else { "INVALID" }
+    );
 }

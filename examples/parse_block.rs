@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example parse_block
 
-use bitcoin::block::{bits_to_target, Block, GENESIS_BLOCK};
+use bitcoin::block::{Block, GENESIS_BLOCK, bits_to_target};
 use std::io::Cursor;
 
 fn main() {
@@ -42,7 +42,10 @@ fn main() {
     println!("\n=== Target Calculation ===\n");
     let bits = [0xe9, 0x3c, 0x01, 0x18];
     let target = bits_to_target(&bits);
-    println!("Bits: {:02x}{:02x}{:02x}{:02x}", bits[3], bits[2], bits[1], bits[0]);
+    println!(
+        "Bits: {:02x}{:02x}{:02x}{:02x}",
+        bits[3], bits[2], bits[1], bits[0]
+    );
     println!("Target: {:064x}", target);
     println!("Block hash must be < target for valid PoW");
 }

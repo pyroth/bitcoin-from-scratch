@@ -22,7 +22,12 @@ fn main() {
 
     println!("\nInputs ({}):", tx.tx_ins.len());
     for (i, input) in tx.tx_ins.iter().enumerate() {
-        println!("  [{}] prev_tx: {}:{}", i, hex::encode(input.prev_tx), input.prev_index);
+        println!(
+            "  [{}] prev_tx: {}:{}",
+            i,
+            hex::encode(input.prev_tx),
+            input.prev_index
+        );
         println!("      sequence: 0x{:08x}", input.sequence);
     }
 

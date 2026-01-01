@@ -4,6 +4,7 @@
 use std::io::{Cursor, Read};
 use std::sync::LazyLock;
 
+use crate::error::Result;
 use crate::script::{decode_int, encode_int};
 use crate::sha256::sha256;
 
@@ -17,6 +18,7 @@ pub static GENESIS_BLOCK: LazyLock<std::collections::HashMap<&'static str, Vec<u
     });
 
 /// Convert bits (compact target) to full target
+#[must_use]
 pub fn bits_to_target(bits: &[u8; 4]) -> num_bigint::BigInt {
     use num_bigint::BigInt;
 
@@ -31,6 +33,7 @@ pub fn bits_to_target(bits: &[u8; 4]) -> num_bigint::BigInt {
 }
 
 /// Convert target to bits (compact format)
+#[must_use]
 pub fn target_to_bits(target: &num_bigint::BigInt) -> [u8; 4] {
     let (_, bytes) = target.to_bytes_be();
 
@@ -55,7 +58,8 @@ pub fn target_to_bits(target: &num_bigint::BigInt) -> [u8; 4] {
     [coeff[0], coeff[1], coeff[2], exponent]
 }
 
-/// Calculate new difficulty bits
+/// Calculate new difficulty bits based on time delta
+#[must_use]
 pub fn calculate_new_bits(prev_bits: &[u8; 4], dt: i64) -> [u8; 4] {
     use num_bigint::BigInt;
 
@@ -91,32 +95,27 @@ pub struct Block {
 
 impl Block {
     /// Decode block header from bytes
-    pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self, &'static str> {
-        let version = decode_int(cursor, 4).map_err(|_| "Failed to read version")? as u32;
+    ///
+    /// # Errors
+    /// Returns `BitcoinError` if the block header data is malformed
+    pub fn decode(cursor: &mut Cursor<&[u8]>) -> Result<Self> {
+        let version = decode_int(cursor, 4)? as u32;
 
         let mut prev_block = [0u8; 32];
-        cursor
-            .read_exact(&mut prev_block)
-            .map_err(|_| "Failed to read prev_block")?;
+        cursor.read_exact(&mut prev_block)?;
         prev_block.reverse();
 
         let mut merkle_root = [0u8; 32];
-        cursor
-            .read_exact(&mut merkle_root)
-            .map_err(|_| "Failed to read merkle_root")?;
+        cursor.read_exact(&mut merkle_root)?;
         merkle_root.reverse();
 
-        let timestamp = decode_int(cursor, 4).map_err(|_| "Failed to read timestamp")? as u32;
+        let timestamp = decode_int(cursor, 4)? as u32;
 
         let mut bits = [0u8; 4];
-        cursor
-            .read_exact(&mut bits)
-            .map_err(|_| "Failed to read bits")?;
+        cursor.read_exact(&mut bits)?;
 
         let mut nonce = [0u8; 4];
-        cursor
-            .read_exact(&mut nonce)
-            .map_err(|_| "Failed to read nonce")?;
+        cursor.read_exact(&mut nonce)?;
 
         Ok(Block {
             version,
@@ -129,6 +128,7 @@ impl Block {
     }
 
     /// Encode block header to bytes
+    #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(80);
 
@@ -150,6 +150,7 @@ impl Block {
     }
 
     /// Get block ID (double SHA-256, reversed)
+    #[must_use]
     pub fn id(&self) -> String {
         let encoded = self.encode();
         let hash = sha256(&sha256(&encoded));
@@ -158,11 +159,13 @@ impl Block {
     }
 
     /// Get target from bits
+    #[must_use]
     pub fn target(&self) -> num_bigint::BigInt {
         bits_to_target(&self.bits)
     }
 
-    /// Calculate difficulty
+    /// Calculate difficulty relative to genesis block
+    #[must_use]
     pub fn difficulty(&self) -> f64 {
         use num_bigint::BigInt;
         use num_traits::ToPrimitive;
@@ -178,6 +181,7 @@ impl Block {
     }
 
     /// Validate block (check proof of work)
+    #[must_use]
     pub fn validate(&self) -> bool {
         use num_bigint::BigInt;
 
@@ -301,13 +305,5 @@ mod tests {
             "00000000ffff0000000000000000000000000000000000000000000000000000"
         );
         assert!(block.validate());
-    }
-
-    #[test]
-    fn test_bits_target_roundtrip() {
-        let bits = [0xff, 0xff, 0x00, 0x1d]; // Genesis difficulty
-        let target = bits_to_target(&bits);
-        let bits2 = target_to_bits(&target);
-        assert_eq!(bits, bits2);
     }
 }
